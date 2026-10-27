@@ -10,8 +10,13 @@ f=$(freight_for_tag "$BASELINE")
 holds() { [[ "$(current "$1")" == "$2" ]]; }
 log "waiting for dev to auto-promote"
 wait_for 600 holds dev "$f"
+up=dev
 for s in qa prod-wave1; do
+  # Freight is offered downstream only once the upstream Stage has verified it (for a Stage
+  # without verification: once its Argo CD app is healthy).
+  wait_for 600 verified_in "$f" "$up"
   kargo promote "${KP[@]}" --stage "$s" --freight "$f" >/dev/null
+  up=$s
   log "promoted $BASELINE to $s; waiting"
   wait_for 600 holds "$s" "$f"
 done

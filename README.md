@@ -57,9 +57,12 @@ Prerequisites:
 
 - `akuity login` done, and an Akuity org you can create instances in (`ORG` in
   [`config.env`](config.env))
-- a GitHub token with contents read/write on this repo, exported as `GITHUB_TOKEN` or held
-  in a `pass` entry named by `PAT_PASS_ENTRY`. Kargo uses it to push the `rendered/*`
-  branches
+- a GitHub token that can push to this repo, exported as `GITHUB_TOKEN` or held in a
+  `pass` entry named by `PAT_PASS_ENTRY`. Kargo uses it to push the `rendered/*`
+  branches. Either a fine-grained token with Contents read/write on this repo only, or
+  a classic token with the `public_repo` scope (enough for a public repo, but it can push
+  to every public repo you can write to). The token is stored only in the temporary
+  Kargo and Argo CD instances, which `make down` deletes
 - tools: `kind`, `kubectl`, `kargo` (1.12.x), `akuity`, `jq`, `yq`, `envsubst`, `htpasswd`
 
 If you run it from a fork, set `GIT_REPO` to the fork.
@@ -116,6 +119,16 @@ make promote STAGE=prod-wave1
 The error-rate check on `prod-wave1` fails. Kargo re-promotes `green` to `prod-wave1` on
 its own. Waves 2 and 3 never take `bad-yellow`, because it was never verified in wave 1.
 
+From a test run (`bad-yellow` serves about 40% 500s):
+
+| Time | Event |
+| --- | --- |
+| 0:00 | `bad-yellow` promoted to `prod-wave1` by a person |
+| 0:20 | verification starts |
+| 1:20 | error-rate check fails (two bad samples, one allowed) |
+| 1:20 | Kargo creates the rollback Promotion (no actor) |
+| 1:32 | `prod-wave1` is back on the previous release |
+
 `slow-*` tags do the same through the latency check (`make release TAG=slow-orange`).
 
 ### 3. Breaking a good release live
@@ -126,6 +139,8 @@ verification, and Kargo rolls the Stage back to the previous release.
 
 ### Things that look like bugs but aren't
 
+- The first promotion to each Stage takes a few minutes to sync. Argo CD learns about the
+  `rendered/<stage>` branch only after Kargo creates it. Later promotions sync in seconds.
 - After an automatic rollback, Kargo does not auto-promote that Stage again until a person
   promotes something. A person decides when the fix is ready.
 - Kargo does not auto-promote Freight that already failed on a Stage. Ship a new tag.

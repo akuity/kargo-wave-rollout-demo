@@ -5,7 +5,6 @@
 # Requires `akuity login`, OrbStack running, and a GitHub token (see config.env). Safe to re-run.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
-token=$(github_token)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 
 # --- kind cluster (on $DOCKER_CONTEXT) ----------------------------------------------------
@@ -38,8 +37,18 @@ akuity kargo agent get "$CLUSTER" "${A[@]}" >/dev/null 2>&1 \
   || akuity kargo agent create "$CLUSTER" "${A[@]}" --self-hosted --akuity-argocd-name "$INSTANCE"
 # New agents are configured asynchronously; installing before that finishes times out.
 wait_for 900 configured kargo agent "$CLUSTER" || echo "WARNING: Kargo agent $CLUSTER not configured after 900s"
-akuity kargo agent install "$CLUSTER" "${A[@]}" --context "$KCTX"
+# Make it the default shard before installing: a controller that starts as a non-default
+# shard ignores every Stage and Warehouse without a shard label until it restarts.
 akuity kargo agent update "$CLUSTER" "${A[@]}" --default-shard >/dev/null
+akuity kargo agent install "$CLUSTER" "${A[@]}" --context "$KCTX"
+default_controller() {
+  kubectl --context "$KCTX" -n akuity logs "deploy/kargo-controller-$CLUSTER" -c controller 2>/dev/null \
+    | grep 'Starting Kargo Controller' | tail -1 | grep -q '"defaultController":true'
+}
+if ! wait_for 300 default_controller; then
+  kubectl --context "$KCTX" -n akuity rollout restart "deploy/kargo-controller-$CLUSTER"
+  wait_for 300 default_controller || echo "WARNING: Kargo controller is not the default shard; Stages will not reconcile"
+fi
 
 akuity argocd cluster get "$CLUSTER" "${A[@]}" >/dev/null 2>&1 || akuity argocd cluster create "$CLUSTER" "${A[@]}"
 wait_for 900 configured argocd cluster "$CLUSTER" || echo "WARNING: Argo CD cluster $CLUSTER not configured after 900s"
@@ -68,6 +77,8 @@ kargo_use
 log "kargo CLI on $(kargo_host)"
 
 # --- Credentials, Argo CD apps and add-ons, Kargo project ---------------------------------
+# Read the token only here, so everything above can be built before it exists.
+token=$(github_token)
 "$DEMO_ROOT/scripts/render.sh"
 kargo_apply "$RENDERED/kargo/project.yaml"
 cat > "$tmp/argocd-repo.yaml" <<YAML

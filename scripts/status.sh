@@ -15,7 +15,7 @@ kargo get stages "${KP[@]}" -o json | jq -r --argjson fr "$freight" --argjson or
   | [ .metadata.name,
       (($h.items // {} | to_entries[0].value.name) as $n | if $n then tag($n) else "-" end),
       ($h.verificationHistory[0].phase // (if .spec.verification then "-" else "n/a" end)),
-      (if .status.currentPromotion then "promoting" else "" end),
+      (if .status.currentPromotion then "promoting" else "-" end),
       (.status.health.status // "-") ]
   | @tsv' \
   | { printf 'STAGE\tFREIGHT\tVERIFY\tPROMOTION\tHEALTH\n'; cat; } | column -t -s $'\t'
