@@ -81,6 +81,10 @@ log "kargo CLI on $(kargo_host)"
 token=$(github_token)
 "$DEMO_ROOT/scripts/render.sh"
 
+# kargo_apply retries, so on a fresh instance expect a few "get resource: not allowed" and
+# "error resolving referenced Role" lines here: the first applies after login, and a
+# RoleBinding checked before its Role exists, fail once and then succeed.
+
 # What the platform team owns: cluster-scoped tasks and checks every project can use.
 for f in "$RENDERED"/platform/*.yaml; do kargo_apply "$f"; done
 log "platform tasks and analysis templates applied"
