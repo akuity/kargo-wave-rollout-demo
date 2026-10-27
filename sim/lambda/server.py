@@ -1,6 +1,6 @@
 """A stand-in for the two AWS APIs the Lambda lane needs, so the demo runs without AWS.
 
-- Lambda: PUT /functions/<fn>/regions/<region>/alias/live {"image": "<repo>:<tag>"}
+- Lambda: PUT /functions/<fn>/regions/<region>/alias/live?image=<repo>:<tag>
   points the function's live alias at a new version (like update-function-code +
   publish-version + update-alias).
 - CloudWatch: GET /functions/<fn>/regions/<region>/metrics returns the live version's
@@ -12,6 +12,7 @@ GET / lists every function, region and alias history. State is in memory only.
 """
 import json
 import random
+from urllib.parse import parse_qs, urlsplit
 import re
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -54,13 +55,13 @@ class Handler(BaseHTTPRequestHandler):
         return self.reply(200, s)
 
     def do_PUT(self):
-        m = ROUTE.match(self.path.split("?")[0])
+        url = urlsplit(self.path)
+        m = ROUTE.match(url.path)
         if not m or m.group(3) != "/alias/live":
             return self.reply(404, {"error": "not found"})
-        try:
-            image = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))["image"]
-        except (ValueError, KeyError):
-            return self.reply(400, {"error": 'body must be {"image": "<repo>:<tag>"}'})
+        image = parse_qs(url.query).get("image", [""])[0]
+        if not image:
+            return self.reply(400, {"error": "missing ?image=<repo>:<tag>"})
         s = STATE.setdefault((m.group(1), m.group(2)), {"version": 0, "history": []})
         s["version"] += 1
         s["image"] = image

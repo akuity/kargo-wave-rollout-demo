@@ -81,8 +81,9 @@ spec:
     config:
       method: PUT
       url: ${{ vars.lambdaAPI }}/functions/${{ vars.function }}/regions/${{ vars.region }}/alias/live
-      headers:
-      - name: Content-Type
-        value: application/json
-      body: '{"image": "${{ vars.image }}:${{ imageFrom(vars.image).Tag }}"}'
+      # A query parameter, not a JSON body: Kargo parses any config value that looks like
+      # JSON into an object, and the http step's body must be a string.
+      queryParams:
+      - name: image
+        value: ${{ vars.image }}:${{ imageFrom(vars.image).Tag }}
       successExpression: response.status == 200
