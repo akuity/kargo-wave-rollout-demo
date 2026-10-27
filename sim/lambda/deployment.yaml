@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lambda-sim
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lambda-sim
+  template:
+    metadata:
+      labels:
+        app: lambda-sim
+    spec:
+      containers:
+      - name: lambda-sim
+        image: python:3.12-alpine
+        command: ["python", "-u", "/app/server.py"]
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+        volumeMounts:
+        - name: app
+          mountPath: /app
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+      volumes:
+      - name: app
+        configMap:
+          name: lambda-sim
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lambda-sim
+spec:
+  selector:
+    app: lambda-sim
+  ports:
+  - port: 80
+    targetPort: 8080

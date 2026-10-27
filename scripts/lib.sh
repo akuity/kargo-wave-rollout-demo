@@ -5,9 +5,10 @@ DEMO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [[ -f "$DEMO_ROOT/config.local.env" ]] && source "$DEMO_ROOT/config.local.env"
 source "$DEMO_ROOT/config.env"
 export DOCKER_CONTEXT
-STAGES=(dev qa prod-wave1 prod-wave2-a prod-wave2-b prod-wave2-c
-        prod-wave3-a prod-wave3-b prod-wave3-c prod-wave3-d prod-wave3-e)
-KP=(--project "$PROJECT")
+# Two lanes, one Kargo project each: the Kubernetes service and the Lambda function.
+WEB_STAGES=(dev qa prod-wave1 prod-wave2-a prod-wave2-b prod-wave2-c
+            prod-wave3-a prod-wave3-b prod-wave3-c prod-wave3-d prod-wave3-e)
+FN_STAGES=(fn-dev fn-qa fn-prod-eu-west-1 fn-prod-us-east-1 fn-prod-ap-southeast-2)
 A=(--org-name "$ORG" --instance-name "$INSTANCE")
 KCTX="kind-$CLUSTER"
 RENDERED="$DEMO_ROOT/.rendered"
@@ -34,9 +35,15 @@ retry() {
   return 1
 }
 
-# The tag the Warehouse currently admits (set by `make release`).
-release_tag() { cat "$STATE_DIR/release-tag" 2>/dev/null || echo "$BASELINE"; }
-set_release_tag() { mkdir -p "$STATE_DIR"; echo "$1" > "$STATE_DIR/release-tag"; }
+# Lane helpers. A lane is `web` or `fn`.
+check_lane() { [[ $1 == web || $1 == fn ]] || { echo "unknown lane '$1' (web or fn)" >&2; exit 2; }; }
+project_of() { if [[ $1 == fn ]]; then echo "$FN_PROJECT"; else echo "$WEB_PROJECT"; fi; }
+warehouse_of() { if [[ $1 == fn ]]; then echo function; else echo app; fi; }
+lane_of_stage() { if [[ $1 == fn-* ]]; then echo fn; else echo web; fi; }
+
+# The tag a lane's Warehouse currently admits (set by `make release`).
+release_tag() { cat "$STATE_DIR/release-tag-$1" 2>/dev/null || echo "$BASELINE"; }
+set_release_tag() { mkdir -p "$STATE_DIR"; echo "$2" > "$STATE_DIR/release-tag-$1"; }
 
 github_token() {
   if [[ -n ${GITHUB_TOKEN:-} ]]; then echo "$GITHUB_TOKEN"
@@ -74,17 +81,21 @@ kargo_use() {
 # kargo_apply <file>: one file per call; several -f arguments fail with "not allowed".
 kargo_apply() { retry 3 kargo apply -f "$1" >/dev/null; }
 
-freights_json() { kargo get freight "${KP[@]}" -o json | jq '[.. | objects | select(.kind == "Freight")]'; }
+freights_json() { kargo get freight --project "$(project_of "$1")" -o json | jq '[.. | objects | select(.kind == "Freight")]'; }
 
-# freight_for_tag <tag>: name of the Freight carrying rollouts-demo:<tag>, if any
+# freight_for_tag <lane> <tag>: name of the lane's Freight carrying rollouts-demo:<tag>, if any
 freight_for_tag() {
-  freights_json | jq -r --arg t "$1" '[.[] | select(any(.images[]?; .tag == $t))
+  freights_json "$1" | jq -r --arg t "$2" '[.[] | select(any(.images[]?; .tag == $t))
     | .metadata.name][0] // empty'
 }
-has_freight_for_tag() { [[ -n "$(freight_for_tag "$1")" ]]; }
+has_freight_for_tag() { [[ -n "$(freight_for_tag "$1" "$2")" ]]; }
 
-# current <stage>: name of the Freight the Stage holds now
+# current <lane> <stage>: name of the Freight the Stage holds now
 current() {
-  kargo get stage "$1" "${KP[@]}" -o json | jq -r '.status.freightHistory[0].items // {} | to_entries[0].value.name // empty'
+  kargo get stage "$2" --project "$(project_of "$1")" -o json \
+    | jq -r '.status.freightHistory[0].items // {} | to_entries[0].value.name // empty'
 }
-verified_in() { kargo get freight "${KP[@]}" --name "$1" -o json | jq -e --arg s "$2" '.status.verifiedIn[$s]' >/dev/null; }
+# verified_in <lane> <freight> <stage>
+verified_in() {
+  kargo get freight --project "$(project_of "$1")" --name "$2" -o json | jq -e --arg s "$3" '.status.verifiedIn[$s]' >/dev/null
+}

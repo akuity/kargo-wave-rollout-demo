@@ -2,7 +2,7 @@ apiVersion: kargo.akuity.io/v1alpha1
 kind: Warehouse
 metadata:
   name: app
-  namespace: ${PROJECT}
+  namespace: ${WEB_PROJECT}
 spec:
   subscriptions:
   # In real use this is the registry CI publishes to (e.g. Artifactory) with a semver or
@@ -12,7 +12,7 @@ spec:
       repoURL: argoproj/rollouts-demo
       imageSelectionStrategy: Lexical
       allowTagsRegexes:
-      - ^${RELEASE_TAG}$
+      - ^${WEB_RELEASE_TAG}$
       discoveryLimit: 1
   # The Kustomize base and overlays travel with the image in the same Freight, so a
   # config change is promoted (and rolled back) exactly like a new build.
@@ -21,4 +21,4 @@ spec:
       branch: main
       commitSelectionStrategy: NewestFromBranch
       includePaths:
-      - app
+      - teams/web-service/app

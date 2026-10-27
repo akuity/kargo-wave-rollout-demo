@@ -1,0 +1,75 @@
+# Who may do what in this project. A Kargo role is a ServiceAccount, Role and RoleBinding
+# in the project namespace, mapped to SSO group claims by annotation.
+#
+#   qa         members of ${QA_GROUP}: see everything, promote to fn-qa, fn-prod-eu-west-1 (the
+#              signoff gates). Every other Stage is automatic, so nobody else promotes.
+#   developer  members of ${DEV_GROUP}: see everything, promote nothing.
+#
+# Kargo admins can still promote anywhere. Group names come from config.env; with SSO
+# off (as in this demo) the roles exist but nobody logs in through them.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: qa
+  namespace: ${FN_PROJECT}
+  annotations:
+    rbac.kargo.akuity.io/managed: "true"
+    rbac.kargo.akuity.io/claim.groups: ${QA_GROUP}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: qa
+  namespace: ${FN_PROJECT}
+  annotations:
+    rbac.kargo.akuity.io/managed: "true"
+rules:
+- apiGroups: [kargo.akuity.io]
+  resources: [stages]
+  resourceNames: [fn-qa, fn-prod-eu-west-1]
+  verbs: [promote]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: qa
+  namespace: ${FN_PROJECT}
+  annotations:
+    rbac.kargo.akuity.io/managed: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: qa
+subjects:
+- kind: ServiceAccount
+  name: qa
+  namespace: ${FN_PROJECT}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: developer
+  namespace: ${FN_PROJECT}
+  annotations:
+    rbac.kargo.akuity.io/managed: "true"
+    rbac.kargo.akuity.io/claim.groups: ${DEV_GROUP}
+---
+# Read access for both, through the kargo-viewer Role every project already has.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: viewers
+  namespace: ${FN_PROJECT}
+  annotations:
+    rbac.kargo.akuity.io/managed: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kargo-viewer
+subjects:
+- kind: ServiceAccount
+  name: qa
+  namespace: ${FN_PROJECT}
+- kind: ServiceAccount
+  name: developer
+  namespace: ${FN_PROJECT}

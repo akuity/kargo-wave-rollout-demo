@@ -76,16 +76,22 @@ retry 3 akuity kargo apply --org-name "$ORG" --name "$INSTANCE" -f "$tmp/admin.y
 kargo_use
 log "kargo CLI on $(kargo_host)"
 
-# --- Credentials, Argo CD apps and add-ons, Kargo project ---------------------------------
+# --- Platform, credentials, Argo CD apps and add-ons, team projects ----------------------
 # Read the token only here, so everything above can be built before it exists.
 token=$(github_token)
 "$DEMO_ROOT/scripts/render.sh"
-kargo_apply "$RENDERED/kargo/project.yaml"
+
+# What the platform team owns: cluster-scoped tasks and checks every project can use.
+for f in "$RENDERED"/platform/*.yaml; do kargo_apply "$f"; done
+log "platform tasks and analysis templates applied"
+
+for lane in web fn; do kargo_apply "$RENDERED/$lane/project.yaml"; done
+# Only the web lane writes to git (its rendered branches).
 cat > "$tmp/argocd-repo.yaml" <<YAML
 apiVersion: v1
 kind: Secret
 metadata:
-  name: repo-$PROJECT
+  name: repo-$WEB_PROJECT
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: repository
@@ -99,8 +105,8 @@ cat > "$tmp/kargo-git.yaml" <<YAML
 apiVersion: v1
 kind: Secret
 metadata:
-  name: git-$PROJECT
-  namespace: $PROJECT
+  name: git-$WEB_PROJECT
+  namespace: $WEB_PROJECT
   labels:
     kargo.akuity.io/cred-type: git
 stringData:
@@ -111,22 +117,26 @@ YAML
 retry 3 akuity argocd apply --org-name "$ORG" --name "$INSTANCE" -f "$tmp/argocd-repo.yaml"
 retry 3 akuity kargo apply --org-name "$ORG" --name "$INSTANCE" -f "$tmp/kargo-git.yaml"
 retry 3 akuity argocd apply --org-name "$ORG" --name "$INSTANCE" -f "$RENDERED/argocd/"
-for f in analysis tasks warehouse stages; do kargo_apply "$RENDERED/kargo/$f.yaml"; done
-log "Kargo project $PROJECT applied"
+for lane in web fn; do
+  for f in roles warehouse stages; do kargo_apply "$RENDERED/$lane/$f.yaml"; done
+  log "Kargo project $(project_of "$lane") applied"
+done
 
-# Verification needs the ingress controller and Prometheus up before the first prod Stage.
+# Verification needs the ingress controller, Prometheus and the Lambda stand-in up before
+# the first prod Stage.
 addons_ready() {
   kubectl --context "$KCTX" -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=5s &&
-  kubectl --context "$KCTX" -n monitoring rollout status deploy/prometheus-server --timeout=5s
+  kubectl --context "$KCTX" -n monitoring rollout status deploy/prometheus-server --timeout=5s &&
+  kubectl --context "$KCTX" -n lambda-sim rollout status deploy/lambda-sim --timeout=5s
 }
 wait_for 600 addons_ready || { echo "add-ons not ready after 600s; check the Argo CD UI"; exit 1; }
-log "ingress-nginx and Prometheus ready"
+log "ingress-nginx, Prometheus and the Lambda stand-in are ready"
 
 # --- Every Stage on the baseline ----------------------------------------------------------
-if [[ -z "$(current prod-wave3-e)" ]]; then
-  "$DEMO_ROOT/scripts/baseline.sh"
-fi
+[[ -n "$(current fn fn-prod-ap-southeast-2)" ]] || "$DEMO_ROOT/scripts/baseline.sh" fn
+[[ -n "$(current web prod-wave3-e)" ]] || "$DEMO_ROOT/scripts/baseline.sh" web
 "$DEMO_ROOT/scripts/status.sh"
 echo
-echo "Kargo UI:   https://$(kargo_host)/project/$PROJECT   (user admin, password in .state/kargo-admin-password)"
+echo "Kargo UI:   https://$(kargo_host)/project/$WEB_PROJECT  and  /project/$FN_PROJECT"
+echo "            (user admin, password in .state/kargo-admin-password)"
 echo "Argo CD UI: https://$(akuity argocd instance get "$INSTANCE" --org-name "$ORG" -o json | jq -r .hostname)"

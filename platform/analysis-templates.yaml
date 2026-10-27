@@ -1,0 +1,73 @@
+# Owned by the platform team: the checks every prod Stage runs. Teams reference them by
+# name and pass their own host / function. Thresholds live here, so changing what
+# "healthy" means is one change for every service.
+#
+# Timing: a 45s delay lets the 30s rate window fill with the new version's traffic, then
+# 6 samples 15s apart. One bad sample is tolerated; a second fails the verification.
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: ingress-error-rate
+spec:
+  args:
+  - name: host
+  metrics:
+  - name: error-rate
+    initialDelay: 45s
+    interval: 15s
+    count: 6
+    failureLimit: 1
+    successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.05
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local
+        query: |
+          sum(rate(nginx_ingress_controller_requests{host="{{args.host}}",status=~"5.."}[30s]))
+          /
+          sum(rate(nginx_ingress_controller_requests{host="{{args.host}}"}[30s]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: ingress-latency-p95
+spec:
+  args:
+  - name: host
+  metrics:
+  - name: latency-p95
+    initialDelay: 45s
+    interval: 15s
+    count: 6
+    failureLimit: 1
+    successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.5
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local
+        query: |
+          histogram_quantile(0.95, sum by (le) (
+            rate(nginx_ingress_controller_request_duration_seconds_bucket{host="{{args.host}}"}[30s])
+          ))
+---
+# Lambda error rate (Errors / Invocations) for the function's live alias in one region.
+# Here it reads the local stand-in; against AWS use the cloudWatch provider instead
+# (examples/cloudwatch-lambda-analysis.yaml), or your metrics backend if Lambda metrics
+# are shipped there.
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: lambda-error-rate
+spec:
+  args:
+  - name: function
+  - name: region
+  metrics:
+  - name: error-rate
+    initialDelay: 15s
+    interval: 10s
+    count: 4
+    failureLimit: 1
+    successCondition: result < 0.05
+    provider:
+      web:
+        url: http://lambda-sim.lambda-sim.svc.cluster.local/functions/{{args.function}}/regions/{{args.region}}/metrics
+        jsonPath: "{$.errorRate}"

@@ -1,0 +1,178 @@
+# A Lambda function, promoted region by region with the same gates as the Kubernetes
+# service:
+#
+#   fn-dev -> fn-qa -> fn-prod-eu-west-1 -> fn-prod-us-east-1, fn-prod-ap-southeast-2
+#
+# Each Stage points the function's `live` alias in one region at the Freight's version
+# (the platform's deploy-lambda task), and prod Stages verify its error rate.
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: fn-dev
+  namespace: ${FN_PROJECT}
+  annotations:
+    kargo.akuity.io/color: gray
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: function
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-lambda
+          kind: ClusterPromotionTask
+        vars:
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: function
+          value: orders-dev
+        - name: region
+          value: eu-west-1
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: fn-qa
+  namespace: ${FN_PROJECT}
+  annotations:
+    kargo.akuity.io/color: amber
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: function
+    sources:
+      stages:
+      - fn-dev
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-lambda
+          kind: ClusterPromotionTask
+        vars:
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: function
+          value: orders-qa
+        - name: region
+          value: eu-west-1
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: fn-prod-eu-west-1
+  namespace: ${FN_PROJECT}
+  annotations:
+    kargo.akuity.io/color: orange
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: function
+    sources:
+      stages:
+      - fn-qa
+  verification:
+    analysisTemplates:
+    - name: lambda-error-rate
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: function
+      value: orders
+    - name: region
+      value: eu-west-1
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-lambda
+          kind: ClusterPromotionTask
+        vars:
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: function
+          value: orders
+        - name: region
+          value: eu-west-1
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: fn-prod-us-east-1
+  namespace: ${FN_PROJECT}
+  annotations:
+    kargo.akuity.io/color: violet
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: function
+    sources:
+      stages:
+      - fn-prod-eu-west-1
+  verification:
+    analysisTemplates:
+    - name: lambda-error-rate
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: function
+      value: orders
+    - name: region
+      value: us-east-1
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-lambda
+          kind: ClusterPromotionTask
+        vars:
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: function
+          value: orders
+        - name: region
+          value: us-east-1
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: fn-prod-ap-southeast-2
+  namespace: ${FN_PROJECT}
+  annotations:
+    kargo.akuity.io/color: violet
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: function
+    sources:
+      stages:
+      - fn-prod-eu-west-1
+  verification:
+    analysisTemplates:
+    - name: lambda-error-rate
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: function
+      value: orders
+    - name: region
+      value: ap-southeast-2
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-lambda
+          kind: ClusterPromotionTask
+        vars:
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: function
+          value: orders
+        - name: region
+          value: ap-southeast-2

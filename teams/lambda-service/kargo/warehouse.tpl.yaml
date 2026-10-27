@@ -1,0 +1,17 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: function
+  namespace: ${FN_PROJECT}
+spec:
+  subscriptions:
+  # The function ships as a container image (a Lambda deployment package type), so the
+  # Warehouse subscribes to the registry CI publishes it to. In this demo the image is a
+  # stand-in: the Lambda simulator only reads its tag (bad-* fails, slow-* is slow).
+  # Pinned to one tag at a time so `make release LANE=fn TAG=...` picks the next "build".
+  - image:
+      repoURL: argoproj/rollouts-demo
+      imageSelectionStrategy: Lexical
+      allowTagsRegexes:
+      - ^${FN_RELEASE_TAG}$
+      discoveryLimit: 1

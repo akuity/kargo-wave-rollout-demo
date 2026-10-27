@@ -1,0 +1,442 @@
+# One Stage per environment / cluster. Each Stage is just: where its Freight comes from,
+# whether it verifies, and the platform's deploy-k8s task with this service's settings.
+#
+#   dev -> qa -> prod-wave1 -> prod-wave2-{a,b,c} -> prod-wave3-{a..e}
+#
+# Promotion policy (auto-promotion, autoRollback) lives in project.yaml; who may promote
+# lives in roles.yaml.
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: dev
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: gray
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      direct: true
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: qa
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: amber
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - dev
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+# Wave 1: one canary cluster. QA promotes it by hand.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave1
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: orange
+  labels:
+    wave: "1"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - qa
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave1.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+# Wave 2: starts as soon as the canary has verified the Freight.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave2-a
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: violet
+  labels:
+    wave: "2"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave1
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave2-a.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave2-b
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: violet
+  labels:
+    wave: "2"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave1
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave2-b.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave2-c
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: violet
+  labels:
+    wave: "2"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave1
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave2-c.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+# Wave 3: starts only when every wave 2 Stage has verified the Freight.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave3-a
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: blue
+  labels:
+    wave: "3"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave2-a
+      - prod-wave2-b
+      - prod-wave2-c
+      availabilityStrategy: All
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave3-a.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave3-b
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: blue
+  labels:
+    wave: "3"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave2-a
+      - prod-wave2-b
+      - prod-wave2-c
+      availabilityStrategy: All
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave3-b.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave3-c
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: blue
+  labels:
+    wave: "3"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave2-a
+      - prod-wave2-b
+      - prod-wave2-c
+      availabilityStrategy: All
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave3-c.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave3-d
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: blue
+  labels:
+    wave: "3"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave2-a
+      - prod-wave2-b
+      - prod-wave2-c
+      availabilityStrategy: All
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave3-d.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Stage
+metadata:
+  name: prod-wave3-e
+  namespace: ${WEB_PROJECT}
+  annotations:
+    kargo.akuity.io/color: blue
+  labels:
+    wave: "3"
+spec:
+  requestedFreight:
+  - origin:
+      kind: Warehouse
+      name: app
+    sources:
+      stages:
+      - prod-wave2-a
+      - prod-wave2-b
+      - prod-wave2-c
+      availabilityStrategy: All
+  verification:
+    analysisTemplates:
+    - name: ingress-error-rate
+      kind: ClusterAnalysisTemplate
+    - name: ingress-latency-p95
+      kind: ClusterAnalysisTemplate
+    args:
+    - name: host
+      value: demo-prod-wave3-e.localhost
+  promotionTemplate:
+    spec:
+      steps:
+      - task:
+          name: deploy-k8s
+          kind: ClusterPromotionTask
+        vars:
+        - name: repoURL
+          value: ${GIT_REPO}
+        - name: image
+          value: argoproj/rollouts-demo
+        - name: overlays
+          value: teams/web-service/app/overlays

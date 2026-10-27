@@ -1,0 +1,26 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: ${FN_PROJECT}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: ${FN_PROJECT}
+  namespace: ${FN_PROJECT}
+spec:
+  # Same shape as the Kubernetes service: dev is automatic, QA signs off on qa and the
+  # first prod region, the other regions follow once it verifies, and every prod region
+  # rolls itself back when its verification fails. First matching policy wins.
+  promotionPolicies:
+  - stageSelector:
+      name: fn-dev
+    autoPromotionEnabled: true
+  - stageSelector:
+      name: fn-prod-eu-west-1
+    autoPromotionEnabled: false
+    autoRollback: {}
+  - stageSelector:
+      name: "regex:^fn-prod-"
+    autoPromotionEnabled: true
+    autoRollback: {}

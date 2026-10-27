@@ -1,13 +1,13 @@
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Project
 metadata:
-  name: ${PROJECT}
+  name: ${WEB_PROJECT}
 ---
 apiVersion: kargo.akuity.io/v1alpha1
 kind: ProjectConfig
 metadata:
-  name: ${PROJECT}
-  namespace: ${PROJECT}
+  name: ${WEB_PROJECT}
+  namespace: ${WEB_PROJECT}
 spec:
   # First matching policy wins.
   # - dev takes every new Freight on its own; qa and prod-wave1 are promoted by a person.

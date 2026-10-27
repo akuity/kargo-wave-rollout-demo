@@ -1,0 +1,88 @@
+# Owned by the platform team. Cluster-scoped, so every team's Kargo project can use them.
+# A team's Stage only names the task and passes a few vars; how a deploy happens is
+# defined once, here.
+#
+# deploy-k8s: Kubernetes services with a Kustomize overlay per Stage.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ClusterPromotionTask
+metadata:
+  name: deploy-k8s
+spec:
+  vars:
+  - name: repoURL        # the team's git repo
+  - name: image          # the image repository the team's Warehouse subscribes to
+  - name: overlays       # path to the overlays directory; one overlay per Stage name
+  steps:
+  # Source at the Freight's commit; the Stage's rendered branch as the output.
+  - uses: git-clone
+    config:
+      repoURL: ${{ vars.repoURL }}
+      checkout:
+      - commit: ${{ commitFrom(vars.repoURL).ID }}
+        path: ./src
+      - branch: rendered/${{ ctx.stage }}
+        create: true
+        path: ./out
+  - uses: git-clear
+    config:
+      path: ./out
+  # Kargo changes the image tag only; everything else comes from the overlay as written.
+  - uses: kustomize-set-image
+    config:
+      path: ./src/${{ vars.overlays }}/${{ ctx.stage }}
+      images:
+      - image: ${{ vars.image }}
+        tag: ${{ imageFrom(vars.image).Tag }}
+  - uses: kustomize-build
+    config:
+      path: ./src/${{ vars.overlays }}/${{ ctx.stage }}
+      outPath: ./out/manifests.yaml
+  # Promotions land on rendered/<stage>, never on main.
+  - uses: git-commit
+    as: commit
+    config:
+      path: ./out
+      message: "${{ ctx.stage }}: ${{ vars.image }}:${{ imageFrom(vars.image).Tag }}"
+  - uses: git-push
+    as: push
+    config:
+      path: ./out
+  # Argo CD Applications are named <project>-<stage>.
+  - uses: argocd-update
+    config:
+      apps:
+      - name: ${{ ctx.project }}-${{ ctx.stage }}
+        sources:
+        - repoURL: ${{ vars.repoURL }}
+          desiredRevision: ${{ task.outputs['push'].commit }}
+---
+# deploy-lambda: point a Lambda function's `live` alias at a new version, per region.
+#
+# In this demo the Lambda API is a local stand-in (sim/lambda), called with Kargo's
+# built-in http step. Against AWS, swap this step for one of:
+#   - gha-dispatch-workflow, calling the GitHub Actions workflow that deploys Lambdas today
+#   - a custom step running `aws lambda update-function-code` + `publish-version` +
+#     `update-alias` (e.g. the amazon/aws-cli image)
+# The Stages, gates, verification and rollback stay exactly as they are.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ClusterPromotionTask
+metadata:
+  name: deploy-lambda
+spec:
+  vars:
+  - name: image          # the function's container image repository
+  - name: function       # function name
+  - name: region         # AWS region
+  - name: lambdaAPI
+    value: http://lambda-sim.lambda-sim.svc.cluster.local
+  steps:
+  - uses: http
+    as: update-alias
+    config:
+      method: PUT
+      url: ${{ vars.lambdaAPI }}/functions/${{ vars.function }}/regions/${{ vars.region }}/alias/live
+      headers:
+      - name: Content-Type
+        value: application/json
+      body: '{"image": "${{ vars.image }}:${{ imageFrom(vars.image).Tag }}"}'
+      successExpression: response.status == 200

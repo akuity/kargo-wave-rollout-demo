@@ -3,11 +3,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: ${PROJECT}-${STAGE}
+  name: ${WEB_PROJECT}-${STAGE}
   namespace: argocd
   annotations:
     # Lets this Kargo Stage (and only it) trigger syncs of this Application.
-    kargo.akuity.io/authorized-stage: ${PROJECT}:${STAGE}
+    kargo.akuity.io/authorized-stage: ${WEB_PROJECT}:${STAGE}
 spec:
   project: default
   source:

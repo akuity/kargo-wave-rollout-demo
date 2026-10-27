@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: lambda-sim
+resources:
+- deployment.yaml
+configMapGenerator:
+- name: lambda-sim
+  files:
+  - server.py

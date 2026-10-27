@@ -1,0 +1,55 @@
+# Not applied by the demo, and not tested here. The lambda-error-rate check against
+# CloudWatch instead of the local stand-in: Errors / Invocations for the function's live
+# alias over the last minutes.
+#
+# The analysis controller needs AWS credentials with cloudwatch:GetMetricData (e.g. IRSA
+# on the cluster running the Kargo agent). The provider has no region field: it queries
+# the region of the controller's AWS configuration. To verify several regions, either run
+# an agent per region, or query a metrics backend that already has every region's
+# Lambda metrics (Coralogix, Datadog, ...) as in examples/coralogix-analysis.yaml.
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: lambda-error-rate-cloudwatch
+spec:
+  args:
+  - name: function
+  metrics:
+  - name: error-rate
+    initialDelay: 2m
+    interval: 1m
+    count: 5
+    failureLimit: 1
+    successCondition: all(result[0].Values, {# < 0.05})
+    provider:
+      cloudWatch:
+        interval: 5m
+        metricDataQueries:
+        - id: rate
+          expression: errors / invocations
+        - id: errors
+          returnData: false
+          metricStat:
+            metric:
+              namespace: AWS/Lambda
+              metricName: Errors
+              dimensions:
+              - name: FunctionName
+                value: "{{args.function}}"
+              - name: Resource
+                value: "{{args.function}}:live"
+            period: 60
+            stat: Sum
+        - id: invocations
+          returnData: false
+          metricStat:
+            metric:
+              namespace: AWS/Lambda
+              metricName: Invocations
+              dimensions:
+              - name: FunctionName
+                value: "{{args.function}}"
+              - name: Resource
+                value: "{{args.function}}:live"
+            period: 60
+            stat: Sum

@@ -1,0 +1,21 @@
+# The AWS stand-in. Not part of the pattern; in real use the Lambda lane talks to AWS.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ${CLUSTER}-lambda-sim
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: ${GIT_REPO}
+    targetRevision: main
+    path: sim/lambda
+  destination:
+    name: ${CLUSTER}
+    namespace: lambda-sim
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
