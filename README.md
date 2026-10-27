@@ -215,6 +215,20 @@ make promote STAGE=fn-qa
 make promote STAGE=fn-prod-eu-west-1     # passes; us-east-1 and ap-southeast-2 follow
 ```
 
+From a test run, as `make functions` shows it for `orders/eu-west-1`:
+
+| Time | Event |
+| --- | --- |
+| 0:00 | `bad-orange` promoted to `fn-prod-eu-west-1` by a person: alias moves to v2 |
+| 0:28 | error-rate check fails; Kargo creates the rollback Promotion (no actor) |
+| 0:29 | alias moves to v3, the previous version again |
+| 0:58 | `orange` promoted by a person: alias moves to v4, verification passes |
+| 1:46 | `us-east-1` and `ap-southeast-2` move to `orange` on their own |
+| 2:36 | `orange` verified in all three regions |
+
+The other two regions stay on the previous version the whole time `bad-orange` is in the
+canary.
+
 ### 4. Breaking a good release live
 
 Promote a fresh good tag to `prod-wave1`. While it verifies, open the Stage's **App**
