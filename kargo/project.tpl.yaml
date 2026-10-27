@@ -1,0 +1,37 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Project
+metadata:
+  name: ${PROJECT}
+---
+apiVersion: kargo.akuity.io/v1alpha1
+kind: ProjectConfig
+metadata:
+  name: ${PROJECT}
+  namespace: ${PROJECT}
+spec:
+  # First matching policy wins.
+  # - dev takes every new Freight on its own; qa and prod-wave1 are promoted by a person.
+  # - Waves 2 and 3 follow automatically once the wave before them has verified the Freight.
+  # - autoRollback: when a prod promotion fails or its verification fails, Kargo re-promotes
+  #   the last Freight that verified on that Stage. No human action.
+  promotionPolicies:
+  - stageSelector:
+      name: dev
+    autoPromotionEnabled: true
+  - stageSelector:
+      name: prod-wave1
+    autoPromotionEnabled: false
+    autoRollback: {}
+  - stageSelector:
+      name: "regex:^prod-wave[23]-"
+    autoPromotionEnabled: true
+    autoRollback: {}
+  # Links on each Stage in the UI. Both need `make ui` running (local port-forwards).
+  stageLinks:
+  - title: App
+    description: The rollouts-demo UI for this Stage
+    url: 'http://demo-{{ .stage.metadata.name }}.localhost:8080/'
+  - title: Error rate
+    description: The Prometheus signal the error-rate verification reads
+    url: 'http://localhost:9090/graph?g0.tab=0&g0.range_input=15m&g0.expr={{ urlquery (printf "sum(rate(nginx_ingress_controller_requests{host=\"demo-%s.localhost\",status=~\"5..\"}[30s])) / sum(rate(nginx_ingress_controller_requests{host=\"demo-%s.localhost\"}[30s]))" .stage.metadata.name .stage.metadata.name) }}'
+    if: stage.metadata.name startsWith "prod-"

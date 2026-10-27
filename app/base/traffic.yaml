@@ -1,0 +1,36 @@
+# Steady synthetic traffic through the ingress controller, so the error-rate and latency
+# metrics the verification reads always have data. Stands in for real user traffic.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic
+  template:
+    metadata:
+      labels:
+        app: traffic
+    spec:
+      containers:
+      - name: traffic
+        image: quay.io/curl/curl:8.11.1
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command: ["sh", "-c"]
+        args:
+        - |
+          while true; do
+            curl -s -o /dev/null --max-time 5 -X POST -H "Host: ${NAMESPACE}.localhost" \
+              http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/color
+            sleep 0.2
+          done
+        resources:
+          requests:
+            cpu: 5m
+            memory: 8Mi

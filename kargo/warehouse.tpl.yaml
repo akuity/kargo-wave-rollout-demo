@@ -1,0 +1,24 @@
+apiVersion: kargo.akuity.io/v1alpha1
+kind: Warehouse
+metadata:
+  name: app
+  namespace: ${PROJECT}
+spec:
+  subscriptions:
+  # In real use this is the registry CI publishes to (e.g. Artifactory) with a semver or
+  # regex selector. Here the tag regex is pinned to one tag at a time so `make release
+  # TAG=...` decides exactly which "build" shows up next.
+  - image:
+      repoURL: argoproj/rollouts-demo
+      imageSelectionStrategy: Lexical
+      allowTagsRegexes:
+      - ^${RELEASE_TAG}$
+      discoveryLimit: 1
+  # The Kustomize base and overlays travel with the image in the same Freight, so a
+  # config change is promoted (and rolled back) exactly like a new build.
+  - git:
+      repoURL: ${GIT_REPO}
+      branch: main
+      commitSelectionStrategy: NewestFromBranch
+      includePaths:
+      - app

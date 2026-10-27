@@ -1,0 +1,25 @@
+# One Application per Stage, rendered by scripts/render.sh. Each syncs the Stage's
+# rendered branch, which only Kargo writes to.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ${PROJECT}-${STAGE}
+  namespace: argocd
+  annotations:
+    # Lets this Kargo Stage (and only it) trigger syncs of this Application.
+    kargo.akuity.io/authorized-stage: ${PROJECT}:${STAGE}
+spec:
+  project: default
+  source:
+    repoURL: ${GIT_REPO}
+    targetRevision: rendered/${STAGE}
+    path: .
+  destination:
+    name: ${CLUSTER}
+    namespace: demo-${STAGE}
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

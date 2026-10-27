@@ -1,0 +1,31 @@
+# Not applied by the demo. Akuity Kargo notifications to a Slack channel: one
+# MessageChannel per channel, and an EventRouter choosing which events go there.
+#
+# The Slack bot token is a Secret named slack-token with key apiKey, created in the
+# Kargo shared resources namespace. Repeat the pair per channel (e.g. one for releases,
+# one for approvals, one for failures) with different event types.
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: MessageChannel
+metadata:
+  name: releases
+  namespace: wave-rollout
+spec:
+  secretRef:
+    name: slack-token
+  slack:
+    channelID: C0000000000   # the channel's ID, not its name
+---
+apiVersion: ee.kargo.akuity.io/v1alpha1
+kind: EventRouter
+metadata:
+  name: promotion-status
+  namespace: wave-rollout
+spec:
+  types:
+  - PromotionCreated
+  - PromotionSucceeded
+  - PromotionFailed
+  - PromotionErrored
+  channels:
+  - name: releases
+    kind: MessageChannel

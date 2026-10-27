@@ -1,0 +1,55 @@
+# Every Stage runs this one task, so a Stage definition is only its place in the pipeline
+# and its verification. This is the part a central team would template across services.
+apiVersion: kargo.akuity.io/v1alpha1
+kind: PromotionTask
+metadata:
+  name: deploy
+  namespace: ${PROJECT}
+spec:
+  vars:
+  - name: repoURL
+    value: ${GIT_REPO}
+  - name: image
+    value: argoproj/rollouts-demo
+  steps:
+  # Source at the Freight's commit; the Stage's rendered branch as the output.
+  - uses: git-clone
+    config:
+      repoURL: ${{ vars.repoURL }}
+      checkout:
+      - commit: ${{ commitFrom(vars.repoURL).ID }}
+        path: ./src
+      - branch: rendered/${{ ctx.stage }}
+        create: true
+        path: ./out
+  - uses: git-clear
+    config:
+      path: ./out
+  # Kargo changes the image tag only; everything else comes from the overlay as written.
+  - uses: kustomize-set-image
+    config:
+      path: ./src/app/overlays/${{ ctx.stage }}
+      images:
+      - image: ${{ vars.image }}
+        tag: ${{ imageFrom(vars.image).Tag }}
+  - uses: kustomize-build
+    config:
+      path: ./src/app/overlays/${{ ctx.stage }}
+      outPath: ./out/manifests.yaml
+  # Promotions land on rendered/<stage>, never on main.
+  - uses: git-commit
+    as: commit
+    config:
+      path: ./out
+      message: "${{ ctx.stage }}: rollouts-demo ${{ imageFrom(vars.image).Tag }}"
+  - uses: git-push
+    as: push
+    config:
+      path: ./out
+  - uses: argocd-update
+    config:
+      apps:
+      - name: ${PROJECT}-${{ ctx.stage }}
+        sources:
+        - repoURL: ${{ vars.repoURL }}
+          desiredRevision: ${{ task.outputs['push'].commit }}

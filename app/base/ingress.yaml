@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rollouts-demo
+spec:
+  ingressClassName: nginx
+  rules:
+  # Each overlay sets the host to <namespace>.localhost. Browsers resolve *.localhost to
+  # 127.0.0.1, so `make ui` (a port-forward to the ingress controller) is enough to open it.
+  - host: app.localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rollouts-demo
+            port:
+              number: 80

@@ -1,0 +1,49 @@
+# Not applied by the demo. The same error-rate verification against Coralogix, which
+# serves a Prometheus-compatible query API, so the stock prometheus provider works.
+#
+# Placeholders: the region host (eu2 here), the metric name and its label keys. Use the
+# names your services actually emit.
+#
+# The API key (DataQuerying permission) is a Secret in the Kargo project, created with:
+#   kargo create generic-credentials --project <project> coralogix --set apiKey=<key>
+# On a self-hosted agent, Kargo copies it next to each AnalysisRun.
+#
+# In each prod Stage, pass the cluster and service:
+#   verification:
+#     analysisTemplates:
+#     - name: coralogix-error-rate
+#     args:
+#     - name: cluster
+#       value: <cluster label value>
+#     - name: service
+#       value: <service label value>
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: coralogix-error-rate
+spec:
+  args:
+  - name: cluster
+  - name: service
+  - name: cx-key
+    valueFrom:
+      secretKeyRef:
+        name: coralogix
+        key: apiKey
+  metrics:
+  - name: error-rate
+    initialDelay: 2m
+    interval: 1m
+    count: 10
+    failureLimit: 2
+    successCondition: len(result) == 0 || result[0] < 0.02
+    provider:
+      prometheus:
+        address: https://api.eu2.coralogix.com/metrics
+        headers:
+        - key: Authorization
+          value: "Bearer {{args.cx-key}}"
+        query: |
+          sum(rate(http_requests_total{cluster="{{args.cluster}}",service="{{args.service}}",status=~"5.."}[2m]))
+          /
+          sum(rate(http_requests_total{cluster="{{args.cluster}}",service="{{args.service}}"}[2m]))

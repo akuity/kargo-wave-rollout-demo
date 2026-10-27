@@ -1,0 +1,51 @@
+# Verification for every prod Stage. Both read the ingress controller's metrics for the
+# Stage's host from the in-cluster Prometheus. To point these at Coralogix (or any
+# PromQL-compatible API) see examples/coralogix-analysis.yaml.
+#
+# Timing: a 45s delay lets the 30s rate window fill with the new version's traffic, then
+# 6 samples 15s apart. One bad sample is tolerated; a second fails the verification.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: error-rate
+  namespace: ${PROJECT}
+spec:
+  args:
+  - name: stage
+  metrics:
+  - name: error-rate
+    initialDelay: 45s
+    interval: 15s
+    count: 6
+    failureLimit: 1
+    successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.05
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local
+        query: |
+          sum(rate(nginx_ingress_controller_requests{host="demo-{{args.stage}}.localhost",status=~"5.."}[30s]))
+          /
+          sum(rate(nginx_ingress_controller_requests{host="demo-{{args.stage}}.localhost"}[30s]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: latency-p95
+  namespace: ${PROJECT}
+spec:
+  args:
+  - name: stage
+  metrics:
+  - name: latency-p95
+    initialDelay: 45s
+    interval: 15s
+    count: 6
+    failureLimit: 1
+    successCondition: len(result) == 0 || isNaN(result[0]) || result[0] < 0.5
+    provider:
+      prometheus:
+        address: http://prometheus-server.monitoring.svc.cluster.local
+        query: |
+          histogram_quantile(0.95, sum by (le) (
+            rate(nginx_ingress_controller_request_duration_seconds_bucket{host="demo-{{args.stage}}.localhost"}[30s])
+          ))
