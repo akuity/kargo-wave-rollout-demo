@@ -7,6 +7,10 @@ source "$(dirname "$0")/lib.sh"
 
 # Only delete instances this demo created: an existing instance must carry the demo's exact
 # description. Skip a kind only when the API says the instance does not exist.
+# First make sure the CLI can see the org at all: when it is logged in to another account or
+# server, every lookup says "not found" and the instances would be left running.
+akuity org list 2>/dev/null | awk 'NR > 1 {print $2}' | grep -qx "$ORG" \
+  || { echo "refusing: the akuity CLI cannot see org $ORG (wrong account or server? try akuity login --server https://akuity.cloud)"; exit 2; }
 for kind in argocd kargo; do
   if ! out=$(akuity "$kind" instance get "$INSTANCE" --org-name "$ORG" -o json 2>&1); then
     grep -qiE 'not ?found' <<<"$out" && continue
