@@ -2,6 +2,7 @@
 # whether it verifies, and the platform's deploy-k8s task with this service's settings.
 #
 #   dev -> qa -> prod-wave1 -> prod-wave2-{a,b,c} -> prod-wave3-{a..e}
+#   (waves 2 and 3 follow their upstream Stage, forward and back)
 #
 # Promotion policy (auto-promotion, autoRollback) lives in project.yaml; who may promote
 # lives in roles.yaml.
@@ -104,7 +105,8 @@ spec:
         - name: overlays
           value: teams/web-service/app/overlays
 ---
-# Wave 2: starts as soon as the canary has verified the Freight.
+# Wave 2: tracks the canary. MatchUpstream means each wave 2 Stage runs whatever prod-wave1
+# runs now (once verified there), so a rollback of prod-wave1 rolls back wave 2 as well.
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
@@ -122,6 +124,8 @@ spec:
     sources:
       stages:
       - prod-wave1
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -162,6 +166,8 @@ spec:
     sources:
       stages:
       - prod-wave1
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -202,6 +208,8 @@ spec:
     sources:
       stages:
       - prod-wave1
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -225,7 +233,8 @@ spec:
         - name: overlays
           value: teams/web-service/app/overlays
 ---
-# Wave 3: starts only when every wave 2 Stage has verified the Freight.
+# Wave 3: each Stage tracks one wave 2 Stage (MatchUpstream allows exactly one upstream):
+#   wave2-a -> wave3-a, wave3-b;  wave2-b -> wave3-c, wave3-d;  wave2-c -> wave3-e
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
@@ -243,9 +252,8 @@ spec:
     sources:
       stages:
       - prod-wave2-a
-      - prod-wave2-b
-      - prod-wave2-c
-      availabilityStrategy: All
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -286,9 +294,8 @@ spec:
     sources:
       stages:
       - prod-wave2-a
-      - prod-wave2-b
-      - prod-wave2-c
-      availabilityStrategy: All
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -328,10 +335,9 @@ spec:
       name: app
     sources:
       stages:
-      - prod-wave2-a
       - prod-wave2-b
-      - prod-wave2-c
-      availabilityStrategy: All
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -371,10 +377,9 @@ spec:
       name: app
     sources:
       stages:
-      - prod-wave2-a
       - prod-wave2-b
-      - prod-wave2-c
-      availabilityStrategy: All
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate
@@ -414,10 +419,9 @@ spec:
       name: app
     sources:
       stages:
-      - prod-wave2-a
-      - prod-wave2-b
       - prod-wave2-c
-      availabilityStrategy: All
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: ingress-error-rate

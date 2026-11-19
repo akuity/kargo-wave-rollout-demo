@@ -196,9 +196,17 @@ make promote STAGE=prod-wave1
 ```
 
 The same canary that rejected `bad-yellow` passes `green`. The three wave 2 Stages then
-start together. Wave 3 waits until all three have passed, and then all five start. In a
-test run, the whole of prod went from canary to the last wave 3 Stage verified in about
-7.5 minutes.
+start together, and each wave 3 Stage starts once its wave 2 Stage has passed
+(wave2-a feeds wave3-a and wave3-b, wave2-b feeds wave3-c and wave3-d, wave2-c feeds
+wave3-e).
+
+Waves 2 and 3 use `selectionPolicy: MatchUpstream`: each runs whatever its one upstream
+Stage runs now, once it has verified there. So a person only ever promotes `prod-wave1`,
+forward or back, and the rest of prod follows. Promoting an older release to
+`prod-wave1` rolls the whole fleet back; in a test run that took under a minute, because
+the older release had already verified everywhere. With the default policy
+(`NewestFreight`) it would not: downstream Stages pick the newest Freight ever verified
+upstream, so they would stay on the newer release.
 
 After a rollback, Kargo does not roll a Stage forward again until a person promotes
 something. Someone decides the fix is ready.

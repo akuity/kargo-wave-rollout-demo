@@ -2,6 +2,7 @@
 # service:
 #
 #   fn-dev -> fn-qa -> fn-prod-eu-west-1 -> fn-prod-us-east-1, fn-prod-ap-southeast-2
+#   (the last two regions follow eu-west-1, forward and back)
 #
 # Each Stage points the function's `live` alias in one region at the Freight's version
 # (the platform's deploy-lambda task), and prod Stages verify its error rate.
@@ -116,6 +117,8 @@ spec:
     sources:
       stages:
       - fn-prod-eu-west-1
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: lambda-error-rate
@@ -154,6 +157,8 @@ spec:
     sources:
       stages:
       - fn-prod-eu-west-1
+      autoPromotionOptions:
+        selectionPolicy: MatchUpstream
   verification:
     analysisTemplates:
     - name: lambda-error-rate
