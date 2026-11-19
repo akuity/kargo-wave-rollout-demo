@@ -15,7 +15,7 @@ spec:
         app: rollouts-demo
     spec:
       containers:
-      - image: argoproj/rollouts-demo:bad-yellow
+      - image: argoproj/rollouts-demo:yellow
         imagePullPolicy: IfNotPresent
         name: rollouts-demo
         ports:
