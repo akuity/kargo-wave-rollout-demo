@@ -15,7 +15,7 @@ spec:
         app: rollouts-demo
     spec:
       containers:
-      - image: argoproj/rollouts-demo:bad-green
+      - image: argoproj/rollouts-demo:purple
         imagePullPolicy: IfNotPresent
         name: rollouts-demo
         ports:
@@ -30,7 +30,7 @@ spec:
             memory: 16Mi
       - envFrom:
         - configMapRef:
-            name: feature-flags-5886tgcdf8
+            name: feature-flags-dbct74ht67
         image: nginx:1.27.3-alpine
         imagePullPolicy: IfNotPresent
         name: flags
@@ -122,11 +122,11 @@ spec:
 ---
 apiVersion: v1
 data:
-  CHECKOUT_V2: "off"
+  CHECKOUT_V2: "on"
   DARK_MODE: "off"
 kind: ConfigMap
 metadata:
-  name: feature-flags-5886tgcdf8
+  name: feature-flags-dbct74ht67
   namespace: demo-dev
 ---
 apiVersion: v1
