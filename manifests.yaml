@@ -30,7 +30,7 @@ spec:
             memory: 16Mi
       - envFrom:
         - configMapRef:
-            name: feature-flags-dbct74ht67
+            name: feature-flags-5886tgcdf8
         image: nginx:1.27.3-alpine
         imagePullPolicy: IfNotPresent
         name: flags
@@ -122,11 +122,11 @@ spec:
 ---
 apiVersion: v1
 data:
-  CHECKOUT_V2: "on"
+  CHECKOUT_V2: "off"
   DARK_MODE: "off"
 kind: ConfigMap
 metadata:
-  name: feature-flags-dbct74ht67
+  name: feature-flags-5886tgcdf8
   namespace: demo-qa
 ---
 apiVersion: v1
