@@ -243,6 +243,60 @@ Promote a fresh good tag to `prod-wave1`. While it verifies, open the Stage's **
 link (needs `make ui`) and turn up the error dial. The extra 500s fail verification, and
 Kargo rolls the Stage back to the previous release.
 
+### 5. Feature flags, and rollbacks that take the config with them
+
+The web service has a flags sidecar (nginx) in front of the app. It reads
+`teams/web-service/app/base/flags.env` through a ConfigMap:
+
+- `CHECKOUT_V2`: a new code path with a bug. When it is on, about 30% of requests fail
+  with a 500.
+- `DARK_MODE`: harmless. It shows up only as an `X-Feature-Dark-Mode` response header.
+
+A Freight is the image tag plus the commit of `teams/web-service/app`, so the flags travel
+with the image. Kustomize puts a content hash in the ConfigMap's name, so a flag change
+rolls out new pods, and promoting older Freight brings back the old image *and* the old
+ConfigMap together. Argo Rollouts on its own reverts only the pod template; a ConfigMap
+that changed with it stays changed.
+
+A flag on its own is a release like any other:
+
+```bash
+make flag NAME=DARK_MODE VALUE=on      # new Freight: same image, new flags
+make promote STAGE=qa
+make promote STAGE=prod-wave1          # waves 2 and 3 follow; FLAGS ON shows DARK_MODE
+```
+
+A bad flag is caught in the canary:
+
+```bash
+make flag NAME=CHECKOUT_V2 VALUE=on
+make promote STAGE=qa
+make promote STAGE=prod-wave1          # ~80 s: error rate fails, Kargo rolls back
+make flag NAME=CHECKOUT_V2 VALUE=off   # main still has the flag on; turn it off
+```
+
+An image and a flag shipped together, and rolled back together:
+
+```bash
+make release TAG=yellow FLAGS="CHECKOUT_V2=on"
+make promote STAGE=qa
+make promote STAGE=prod-wave1          # fails; prod-wave1 returns to the previous image
+                                       # and the previous flags in one step
+make flag NAME=CHECKOUT_V2 VALUE=off
+```
+
+`make status` has a FLAGS ON column with the flags each Stage is running.
+
+A rollback changes what the Stages run, not `main`: until the flag is turned off there,
+every later release carries it and fails the canary too. `make release` and `make flag`
+print a reminder while `CHECKOUT_V2` is on in `main`.
+
+`make flag` and `make release` commit to `main` and push, as a developer merging a change
+would, so they need push access to `GIT_REPO`. Every release is a new commit, so a tag can
+be released again (`make release TAG=green` twice gives two Freight); `make up` reuses the
+baseline's existing Freight and pushes nothing. A Freight alias picks one exactly:
+`make promote STAGE=prod-wave1 TAG=oily-goat`.
+
 ### Things that look like bugs but aren't
 
 - The first promotion to each Kubernetes Stage takes a few minutes to sync. Argo CD learns
@@ -250,7 +304,8 @@ Kargo rolls the Stage back to the previous release.
   seconds.
 - After an automatic rollback, Kargo does not auto-promote that Stage again until a person
   promotes something.
-- Kargo does not auto-promote Freight that already failed on a Stage. Ship a new tag.
+- Kargo does not auto-promote Freight that already failed on a Stage. Release again
+  (`make release TAG=...` makes new Freight even for a tag you have used).
 - Restarting the Lambda stand-in forgets every alias, since its state is in memory. Re-run
   `make up` to put the baseline back.
 

@@ -5,3 +5,13 @@ resources:
 - service.yaml
 - ingress.yaml
 - traffic.yaml
+# Both ConfigMaps get a content hash in their name, so a flag change changes the pod
+# template: the Deployment rolls out new pods, and a rollback brings the old ConfigMap
+# and the old image back together.
+configMapGenerator:
+- name: feature-flags
+  envs:
+  - flags.env
+- name: flags-proxy
+  files:
+  - default.conf.template=flags-proxy.conf.template

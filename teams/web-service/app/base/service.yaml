@@ -7,4 +7,4 @@ spec:
     app: rollouts-demo
   ports:
   - port: 80
-    targetPort: 8080
+    targetPort: 8081   # the flags sidecar, which forwards to the app on 8080

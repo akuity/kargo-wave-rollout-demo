@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 S := scripts
 
-.PHONY: help up status watch release promote functions ui down
+.PHONY: help up status watch release flag promote functions ui down
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -15,11 +15,15 @@ status: ## Every Stage's Freight, verification and health
 watch: ## status, refreshed every 5s
 	@while :; do clear; $(S)/status.sh; sleep 5; done
 
-release: ## New Freight for a tag: make release TAG=green [LANE=fn]  (LANE: web, the default, or fn)
-	@test -n "$(TAG)" || { echo "usage: make release TAG=green [LANE=fn]"; exit 2; }
-	@$(S)/release.sh $(or $(LANE),web) $(TAG)
+release: ## New Freight for a tag, any number of times: make release TAG=green [FLAGS="CHECKOUT_V2=on"] [LANE=fn]
+	@test -n "$(TAG)" || { echo "usage: make release TAG=green [FLAGS=\"CHECKOUT_V2=on DARK_MODE=off\"] [LANE=fn]"; exit 2; }
+	@$(S)/release.sh $(or $(LANE),web) $(TAG) $(FLAGS)
 
-promote: ## Promote a release to a Stage: make promote STAGE=qa [TAG=green]  (fn-* Stages are the Lambda lane)
+flag: ## Change a feature flag (web lane); new Freight: make flag NAME=CHECKOUT_V2 VALUE=on
+	@test -n "$(NAME)" -a -n "$(VALUE)" || { echo "usage: make flag NAME=CHECKOUT_V2 VALUE=on"; exit 2; }
+	@$(S)/flag.sh $(NAME) $(VALUE)
+
+promote: ## Promote to a Stage: make promote STAGE=qa [TAG=green or a Freight alias]  (fn-* Stages are the Lambda lane)
 	@test -n "$(STAGE)" || { echo "usage: make promote STAGE=qa [TAG=green]"; exit 2; }
 	@$(S)/promote.sh $(STAGE) $(TAG)
 

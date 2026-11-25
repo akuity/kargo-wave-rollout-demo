@@ -13,7 +13,7 @@ baseline() {
   else
     first=fn-dev gates=(fn-qa fn-prod-eu-west-1) rest=(fn-prod-us-east-1 fn-prod-ap-southeast-2)
   fi
-  "$DEMO_ROOT/scripts/release.sh" "$lane" "$BASELINE"
+  REUSE=1 "$DEMO_ROOT/scripts/release.sh" "$lane" "$BASELINE"
   f=$(freight_for_tag "$lane" "$BASELINE")
   log "$lane: waiting for $first to auto-promote"
   wait_for 600 holds "$lane" "$first" "$f"

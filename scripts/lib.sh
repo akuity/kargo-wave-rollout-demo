@@ -83,12 +83,102 @@ kargo_apply() { retry 3 kargo apply -f "$1" >/dev/null; }
 
 freights_json() { kargo get freight --project "$(project_of "$1")" -o json | jq '[.. | objects | select(.kind == "Freight")]'; }
 
-# freight_for_tag <lane> <tag>: name of the lane's Freight carrying rollouts-demo:<tag>, if any
+# freight_for_tag <lane> <tag>: name of the lane's newest Freight carrying
+# rollouts-demo:<tag>, if any. A tag can have several Freight in the web lane: each
+# release of it (and each flag change) comes with a new commit.
 freight_for_tag() {
-  freights_json "$1" | jq -r --arg t "$2" '[.[] | select(any(.images[]?; .tag == $t))
-    | .metadata.name][0] // empty'
+  freights_json "$1" | jq -r --arg t "$2" '[.[] | select(any(.images[]?; .tag == $t))]
+    | sort_by(.metadata.creationTimestamp) | last | .metadata.name // empty'
 }
 has_freight_for_tag() { [[ -n "$(freight_for_tag "$1" "$2")" ]]; }
+
+# freight_for_ref <lane> <tag-or-alias>: a Freight alias (e.g. oily-goat) names exactly
+# one Freight; otherwise the newest Freight for that tag.
+freight_for_ref() {
+  local f
+  f=$(freights_json "$1" | jq -r --arg a "$2" '[.[] | select(.alias == $a)][0].metadata.name // empty')
+  [[ -n $f ]] && echo "$f" || freight_for_tag "$1" "$2"
+}
+
+# freight_for_commit <lane> <sha> <tag>: the Freight made from this commit and this tag
+freight_for_commit() {
+  freights_json "$1" | jq -r --arg c "$2" --arg t "$3" '[.[] | select(any(.commits[]?; .id == $c))
+    | select(any(.images[]?; .tag == $t))][0].metadata.name // empty'
+}
+has_freight_for_commit() { [[ -n "$(freight_for_commit "$@")" ]]; }
+
+freight_alias() { freights_json "$1" | jq -r --arg f "$2" '.[] | select(.metadata.name == $f) | .alias // ""'; }
+
+# preload_image <image>: pull an image onto the kind node, so a registry hiccup can't stall
+# a promotion. crictl on the node, because `kind load` fails on multi-arch images.
+preload_image() {
+  docker exec "$CLUSTER-control-plane" crictl pull "docker.io/$1" >/dev/null 2>&1 \
+    || echo "note: could not pre-load $1; the cluster will pull it" >&2
+}
+
+# Feature flags for the web lane live in this file; every change is a commit, and so new
+# Freight (see `make flag`).
+FLAGS_FILE="teams/web-service/app/base/flags.env"
+
+# require_clean <path>...: refuse to start when these files already have uncommitted edits,
+# so a flag change or release never commits someone's unrelated work.
+require_clean() {
+  git -C "$DEMO_ROOT" diff --quiet HEAD -- "$@" \
+    || { echo "uncommitted changes in: $*; commit or discard them first" >&2; return 1; }
+}
+
+# restore_on_failure <path>...: on a failed exit, put these files back as committed (a file
+# that is not in HEAD yet is removed).
+restore_files() {
+  local p
+  for p in "$@"; do
+    if git -C "$DEMO_ROOT" cat-file -e "HEAD:${p#"$DEMO_ROOT/"}" 2>/dev/null; then
+      git -C "$DEMO_ROOT" checkout -q HEAD -- "$p"
+    else
+      rm -f -- "$p"
+    fi
+  done
+}
+restore_on_failure() {
+  local q; q=$(printf "%q " "$@")
+  # shellcheck disable=SC2064,SC2154  # expand the paths now; rc is set inside the trap
+  trap "rc=\$?; (( rc == 0 )) || restore_files $q; exit \$rc" EXIT
+}
+
+# flag_on_at_head <NAME>: true when the flag is on in the committed flags.env
+flag_on_at_head() { git -C "$DEMO_ROOT" show "HEAD:$FLAGS_FILE" 2>/dev/null | grep -qx "$1=on"; }
+
+# set_flag <NAME> <on|off>: edit flags.env in place (no commit)
+set_flag() {
+  local name=$1 value=$2 f="$DEMO_ROOT/$FLAGS_FILE"
+  grep -q "^$name=" "$f" || { echo "unknown flag '$name'; flags: $(grep -oE '^[A-Z0-9_]+' "$f" | tr '\n' ' ')" >&2; return 1; }
+  [[ $value == on || $value == off ]] || { echo "flag value must be on or off, not '$value'" >&2; return 1; }
+  sed -i.bak "s/^$name=.*/$name=$value/" "$f" && rm -f "$f.bak"
+}
+
+# flags_at <sha>: the flags that are on at a commit, e.g. "CHECKOUT_V2", or "-"
+flags_at() {
+  git -C "$DEMO_ROOT" cat-file -e "$1" 2>/dev/null || git -C "$DEMO_ROOT" fetch -q origin main 2>/dev/null || true
+  local on
+  on=$(git -C "$DEMO_ROOT" show "$1:$FLAGS_FILE" 2>/dev/null | grep -E '^[A-Z0-9_]+=on$' | cut -d= -f1 | paste -sd, -) || true
+  echo "${on:--}"
+}
+
+# publish <message> <path>...: commit paths on main and push, as if a developer merged a
+# change. Prints the new commit's SHA. The Warehouse turns the commit into Freight.
+publish() {
+  local msg=$1; shift
+  [[ "$(git -C "$DEMO_ROOT" rev-parse --abbrev-ref HEAD)" == main ]] \
+    || { echo "publish: $DEMO_ROOT is not on main" >&2; return 1; }
+  # Each step returns on failure: set -e does not apply inside the $(publish ...) callers use.
+  git -C "$DEMO_ROOT" add -- "$@" || return 1
+  git -C "$DEMO_ROOT" commit -q -m "$msg" -- "$@" || return 1
+  git -C "$DEMO_ROOT" pull -q --rebase --autostash origin main \
+    || { echo "publish: pulling origin main failed (offline, no access, or a conflict); check $DEMO_ROOT" >&2; return 1; }
+  git -C "$DEMO_ROOT" push -q origin main \
+    || { echo "publish: push to origin main failed (push access to GIT_REPO is needed)" >&2; return 1; }
+  git -C "$DEMO_ROOT" rev-parse HEAD
+}
 
 # current <lane> <stage>: name of the Freight the Stage holds now
 current() {

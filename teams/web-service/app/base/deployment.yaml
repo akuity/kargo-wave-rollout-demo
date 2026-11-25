@@ -29,3 +29,26 @@ spec:
           requests:
             cpu: 5m
             memory: 16Mi
+      # Applies the feature flags (flags.env) to live traffic. The Service points here.
+      - name: flags
+        image: nginx:1.27.3-alpine
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: feature-flags
+        ports:
+        - containerPort: 8081
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+        volumeMounts:
+        - name: flags-proxy
+          mountPath: /etc/nginx/templates
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+      volumes:
+      - name: flags-proxy
+        configMap:
+          name: flags-proxy
