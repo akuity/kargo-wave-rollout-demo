@@ -28,6 +28,28 @@ spec:
           requests:
             cpu: 5m
             memory: 16Mi
+      - envFrom:
+        - configMapRef:
+            name: feature-flags-5886tgcdf8
+        image: nginx:1.27.3-alpine
+        imagePullPolicy: IfNotPresent
+        name: flags
+        ports:
+        - containerPort: 8081
+        readinessProbe:
+          tcpSocket:
+            port: 8081
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+        volumeMounts:
+        - mountPath: /etc/nginx/templates
+          name: flags-proxy
+      volumes:
+      - configMap:
+          name: flags-proxy-k6mf2m226m
+        name: flags-proxy
 ---
 apiVersion: v1
 kind: Service
@@ -37,7 +59,7 @@ metadata:
 spec:
   ports:
   - port: 80
-    targetPort: 8080
+    targetPort: 8081
   selector:
     app: rollouts-demo
 ---
@@ -97,3 +119,45 @@ spec:
           requests:
             cpu: 5m
             memory: 8Mi
+---
+apiVersion: v1
+data:
+  CHECKOUT_V2: "off"
+  DARK_MODE: "off"
+kind: ConfigMap
+metadata:
+  name: feature-flags-5886tgcdf8
+  namespace: demo-prod-wave3-a
+---
+apiVersion: v1
+data:
+  default.conf.template: |
+    # Sidecar in front of rollouts-demo that applies the feature flags. The nginx image runs
+    # envsubst on this file at start, filling ${CHECKOUT_V2} and ${DARK_MODE} from the
+    # feature-flags ConfigMap; nginx's own $variables are left alone.
+
+    # CHECKOUT_V2=on sends ~30% of requests down the broken checkout path.
+    split_clients "$request_id" $checkout_v2_path {
+        30%  broken;
+        *    ok;
+    }
+    map "${CHECKOUT_V2}:$checkout_v2_path" $checkout_v2_fails {
+        "on:broken"  1;
+        default      0;
+    }
+
+    server {
+        listen 8081;
+        location / {
+            add_header X-Feature-Checkout-V2 "${CHECKOUT_V2}" always;
+            add_header X-Feature-Dark-Mode "${DARK_MODE}" always;
+            if ($checkout_v2_fails) {
+                return 500 "checkout_v2 failed\n";
+            }
+            proxy_pass http://127.0.0.1:8080;
+        }
+    }
+kind: ConfigMap
+metadata:
+  name: flags-proxy-k6mf2m226m
+  namespace: demo-prod-wave3-a
