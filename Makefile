@@ -28,7 +28,7 @@ promote: ## Promote to a Stage: make promote STAGE=qa [TAG=green or a Freight al
 	@$(S)/promote.sh $(STAGE) $(TAG)
 
 approve: ## Merge the open Kargo PR for prod-wave1 (the change-control approval); or merge it in GitHub
-	@20 20 12 61 79 80 81 399 701 33 98 100 204 250 395 398 400S)/approve.sh
+	@$(S)/approve.sh
 
 functions: ## The simulated Lambda: which version each function/region alias points at
 	@kubectl --context kind-$${CLUSTER:-waves} -n lambda-sim exec deploy/lambda-sim -- \
