@@ -12,6 +12,13 @@ spec:
   - name: repoURL        # the team's git repo
   - name: image          # the image repository the team's Warehouse subscribes to
   - name: overlays       # path to the overlays directory; one overlay per Stage name
+  # approval: "none" pushes straight to rendered/<stage>. "pr" opens a pull request into
+  # rendered/<stage> instead and waits until a reviewer merges it, so nothing deploys
+  # without an approval on record (change control for SOX-scoped apps). Kargo's own
+  # automatic rollbacks skip the PR: they return to Freight that was already approved
+  # and verified, and they should not wait for a person.
+  - name: approval
+    value: none
   steps:
   # Source at the Freight's commit; the Stage's rendered branch as the output.
   - uses: git-clone
@@ -43,18 +50,62 @@ spec:
     config:
       path: ./out
       message: "${{ ctx.stage }}: ${{ vars.image }}:${{ imageFrom(vars.image).Tag }}"
-  - uses: git-push
+  # No approval needed (or an automatic rollback): push straight to the rendered branch.
+  - if: ${{ vars.approval != 'pr' || ctx.meta.promotion.rollback }}
+    uses: git-push
     as: push
     config:
       path: ./out
-  # Argo CD Applications are named <project>-<stage>.
-  - uses: argocd-update
+  # Approval needed: push to a branch of its own, open a PR into rendered/<stage>, wait.
+  - if: ${{ vars.approval == 'pr' && !ctx.meta.promotion.rollback }}
+    uses: git-push
+    as: push-for-review
+    config:
+      path: ./out
+      generateTargetBranch: true
+  - if: ${{ vars.approval == 'pr' && !ctx.meta.promotion.rollback }}
+    uses: git-open-pr
+    as: open-pr
+    config:
+      repoURL: ${{ vars.repoURL }}
+      sourceBranch: ${{ task.outputs['push-for-review'].branch }}
+      targetBranch: rendered/${{ ctx.stage }}
+      title: "Deploy ${{ vars.image }}:${{ imageFrom(vars.image).Tag }} (${{ ctx.targetFreight.alias }}) to ${{ ctx.stage }}"
+      description: |
+        Kargo promotion `${{ ctx.promotion }}`, requested by `${{ ctx.meta.promotion.actor }}`.
+
+        - Stage: `${{ ctx.stage }}` (project `${{ ctx.project }}`)
+        - Freight: `${{ ctx.targetFreight.alias }}` (`${{ ctx.targetFreight.name }}`)
+        - Image: `${{ vars.image }}:${{ imageFrom(vars.image).Tag }}`
+        - Source commit: `${{ commitFrom(vars.repoURL).ID }}`
+
+        Merging this PR approves the deploy. Kargo then syncs Argo CD and runs
+        verification; later waves follow only after it passes.
+  - if: ${{ vars.approval == 'pr' && !ctx.meta.promotion.rollback }}
+    uses: git-wait-for-pr
+    as: wait-for-approval
+    config:
+      repoURL: ${{ vars.repoURL }}
+      prNumber: ${{ task.outputs['open-pr'].pr.id }}
+      pollInterval: 10s
+  # Argo CD Applications are named <project>-<stage>. Sync to the commit that landed on
+  # rendered/<stage>: the direct push, or the merge of the approved PR.
+  - if: ${{ vars.approval != 'pr' || ctx.meta.promotion.rollback }}
+    uses: argocd-update
     config:
       apps:
       - name: ${{ ctx.project }}-${{ ctx.stage }}
         sources:
         - repoURL: ${{ vars.repoURL }}
           desiredRevision: ${{ task.outputs['push'].commit }}
+  - if: ${{ vars.approval == 'pr' && !ctx.meta.promotion.rollback }}
+    uses: argocd-update
+    config:
+      apps:
+      - name: ${{ ctx.project }}-${{ ctx.stage }}
+        sources:
+        - repoURL: ${{ vars.repoURL }}
+          desiredRevision: ${{ task.outputs['wait-for-approval'].commit }}
 ---
 # deploy-lambda: point a Lambda function's `live` alias at a new version, per region.
 #

@@ -64,7 +64,8 @@ spec:
         - name: overlays
           value: teams/web-service/app/overlays
 ---
-# Wave 1: one canary cluster. QA promotes it by hand.
+# Wave 1: one canary cluster. QA promotes it by hand, and the deploy waits for an approved
+# PR (see the approval var below), which gates the whole wave rollout.
 apiVersion: kargo.akuity.io/v1alpha1
 kind: Stage
 metadata:
@@ -104,6 +105,10 @@ spec:
           value: argoproj/rollouts-demo
         - name: overlays
           value: teams/web-service/app/overlays
+        # Change control: every deploy to the canary (and so to all of prod, which follows it)
+        # waits for an approved, merged PR into rendered/prod-wave1.
+        - name: approval
+          value: pr
 ---
 # Wave 2: tracks the canary. MatchUpstream means each wave 2 Stage runs whatever prod-wave1
 # runs now (once verified there), so a rollback of prod-wave1 rolls back wave 2 as well.

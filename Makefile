@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 S := scripts
 
-.PHONY: help up status watch release flag promote functions ui down
+.PHONY: help up status watch release flag promote approve functions ui down
 
 help: ## Show the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-10s %s\n", $$1, $$2}'
@@ -26,6 +26,9 @@ flag: ## Change a feature flag (web lane); new Freight: make flag NAME=CHECKOUT_
 promote: ## Promote to a Stage: make promote STAGE=qa [TAG=green or a Freight alias]  (fn-* Stages are the Lambda lane)
 	@test -n "$(STAGE)" || { echo "usage: make promote STAGE=qa [TAG=green]"; exit 2; }
 	@$(S)/promote.sh $(STAGE) $(TAG)
+
+approve: ## Merge the open Kargo PR for prod-wave1 (the change-control approval); or merge it in GitHub
+	@20 20 12 61 79 80 81 399 701 33 98 100 204 250 395 398 400S)/approve.sh
 
 functions: ## The simulated Lambda: which version each function/region alias points at
 	@kubectl --context kind-$${CLUSTER:-waves} -n lambda-sim exec deploy/lambda-sim -- \

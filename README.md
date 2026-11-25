@@ -74,6 +74,41 @@ of the project. Group names are set in [`config.env`](config.env). This demo run
 off and logs in as `admin`, so the roles are created but nobody logs in through them.
 With Okta (or any OIDC provider) connected to Kargo, they apply as written.
 
+## Change control: an approved PR before prod
+
+Every deploy to `prod-wave1` waits for an approved pull request, and since waves 2 and 3
+follow `prod-wave1`, nothing reaches any prod cluster without one. This is the kind of
+change control SOX-scoped apps need: who asked for the deploy, who approved it, what
+exactly was deployed, and when, all on record.
+
+How it works: the shared `deploy-k8s` task takes an `approval` var (`none` by default).
+`prod-wave1` sets it to `pr`. Its promotion then pushes the rendered manifests to a branch
+of their own, opens a PR into `rendered/prod-wave1`, and waits (`git-wait-for-pr`). The
+PR names the image, the Freight, the source commit, the Kargo promotion and who requested
+it. Merging the PR is the approval: Kargo syncs Argo CD to the merge commit and runs
+verification. Closing the PR without merging fails the promotion, and nothing deploys.
+
+```bash
+make promote STAGE=prod-wave1 TAG=red   # opens a PR and waits
+make approve                            # or merge it in GitHub
+```
+
+Two exceptions, on purpose:
+
+- Kargo's automatic rollbacks skip the PR (`ctx.meta.promotion.rollback`). They return to
+  Freight that was already approved and verified, and waiting for a person would defeat
+  them. A rollback a person asks for (promoting older Freight) still needs a PR.
+- Other Stages push straight to their rendered branch.
+
+The audit trail lives in three places: the PR (approver, time, diff of the rendered
+manifests), the Kargo Promotion (who promoted which Freight, each step's result,
+verification), and the `rendered/prod-wave1` branch history (exactly what ran when). With
+SSO connected, the `qa` role in [QA signoff](#qa-signoff) limits who can request the
+deploy, and GitHub branch protection on `rendered/prod-wave1` (required reviews, code
+owners) limits who can approve it. In this demo Kargo opens PRs with the same GitHub token
+you merge with, so GitHub won't let you approve your own PR; merging stands in for the
+approval. In real use Kargo opens PRs as a bot or GitHub App.
+
 ## The Lambda lane
 
 The function ships as a container image, so its Warehouse subscribes to an image
